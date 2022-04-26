@@ -1,0 +1,186 @@
+---
+title: "El Valor en Riesgo VaR"
+
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options("getSymbols.warning4.0"=FALSE)
+
+library(UsingR)
+library(matrixStats)
+library(quantmod)
+library(knitr)
+```
+
+## VaR por simulación de Montecarlo
+
+El VaR por simulación de Montecarlo es un método para estimar el VaR (Valor en Riesgo) que utiliza un software informático para generar cientos o miles de posibles resultados sobre el comportamiento de los precios de activos financieros, utilizando simulaciones en computadora para generar caminatas aleatorias de los precios.
+
+**Pasos para el cálculo** 
+
+Se tomarán en cuenta las siguientes acciones: **Bimbo, Coca-Cola, América móvil, Walmex, Axtel ** en un periodo de tiempo de 1 año (01/08/2020 al 01/08/2021)
+
+***1)	Identificar los factores de riesgo***
+
+Son todas aquellas variables aleatorias que influyen en la determinación del precio de un activo financiero. Es necesario considerar que los factores de riesgo serán diferentes de acuerdo con cada tipo de instrumento; por ejemplo, el factor de riesgo una acción es su propio precio.
+
+***2)	Cálculo de rendimientos de los factores de riesgo***
+
+El rendimiento es la variación del precio de un activo en un periodo, con respecto a su valor inicial. Es elemental calcularlo porque permite conocer si los instrumentos se están comportando como una “caminata aleatoria, es decir, que el precio de una acción hoy es independiente de los observados en días anteriores.
+
+Su cálculo se sigue como:
+
+$$ R_t = ln\left(\frac{P_t}{P_{t-1}}\right)$$
+A continuación se muestran algunos de estos rendimientos por acción 
+```{r, echo=FALSE}
+
+Acciones <- c("BIMBOA.MX","KOFUBL.MX","AMXL.MX","WALMEX.MX","AXTELCPO.MX")
+s<-getSymbols(Acciones,from='2020-08-01',to='2021-08-01')
+AdjClose <- cbind(Ad(BIMBOA.MX),Ad(KOFUBL.MX),Ad(AMXL.MX),Ad(WALMEX.MX),Ad(AXTELCPO.MX))
+rendBIMBO <- dailyReturn(Ad(BIMBOA.MX), subset=NULL, type='log')
+rendCOCA <- dailyReturn(Ad(KOFUBL.MX), subset=NULL, type='log')
+rendAMERICA <- dailyReturn(Ad(AMXL.MX), subset=NULL, type='log')
+rendWALMEX <- dailyReturn(Ad(WALMEX.MX), subset=NULL, type='log')
+rendAXTEL <- dailyReturn(Ad(AXTELCPO.MX), subset=NULL, type='log')
+rendAcciones <- cbind(rendBIMBO,rendCOCA,rendAMERICA,rendWALMEX,rendAXTEL);rendAcciones <- rendAcciones[-1,]
+colnames(rendAcciones)<-c("rendBIMBO","rendCOCA","rendAMERICA","rendWALMEX","rendAXTEL")
+
+kable(round(rendAcciones[1:10,],5))
+```
+
+## Grafico de los rendimientos
+A continuación se presentan los gráficos de rendimientos de cada una de las acciones del portafolio.
+
+```{r pressure, echo=FALSE,fig.align="center"}
+par(mfrow=c(3,2))
+ti<-seq(0,250,1);ti<-ti[-251]
+row.names(rendAcciones)<-NULL
+plot(ti,rendAcciones[,1],type="l",ylab="",main = "Rendimientos BIMBO", col="black")
+plot(ti,rendAcciones[,2],type="l",ylab="",main = "Rendimientos COCA",col="red")
+plot(ti,rendAcciones[,3],type="l",ylab="",main = "Rendimientos AMERICAN",col="blue")
+plot(ti,rendAcciones[,4],type="l",ylab="",main = "Rendimientos WALMEX",col="violet")
+plot(ti,rendAcciones[,5],type="l",ylab="",main = "Rendimientos AXTEL",col="green")
+```
+
+***3)	Generar Matriz de Varianza-Covarianza***
+
+Esta matriz de varianza-covarianza es una medida de dispersión, ayuda a entender la variabilidad y las relaciones lineales entre las variables.
+```{r, echo=FALSE}
+Mcorelacion <- cor(rendAcciones)
+kable(round(Mcorelacion,3))
+```
+
+***4)	Descomposición de Cholesky***
+
+Lo que hace la descomposición de Cholesky es transformar “N” variables aleatorias independientes en “n” cambios correlacionados de los factores de riesgo.
+A continuanción se muestra la Matiz *L*
+```{r,echo=FALSE}
+L <- t(chol(Mcorelacion))
+kable(round(L,3))
+```
+
+***5)	Simulación de precio de acciones***
+
+Para la simulación de precios de acciones se hará uso del Movimiento Browniano geométrico.
+
+$$dS_t = \mu S_{t}d_t + \sigma S_{t} d_W$$
+
+En un intervalo de tiempo pequeño $\bigtriangleup t$ se tiene que:
+
+$$ \frac{\bigtriangleup S}{S} = \mu \bigtriangleup t + \sigma \varepsilon \sqrt{\bigtriangleup t}$$
+
+Entonces se tiene la siguiente formula recursiva:
+
+$$ S_{t} = S_{0}*e^{\left(\mu-\frac{\sigma ^2}{2} \right)\bigtriangleup t + \sigma \varepsilon_t \sqrt{\bigtriangleup t}} $$
+ 
+
+Para la generación de números aleatorios se usará $\varepsilon = Z*L$
+
+***6)	Se determina el VaR empleando los escenarios simulados por método de Montecarlo***
+
+Se toma el porcentaje correspondiente a la participación para cada uno de los activos en base a una inversión total de 10 Millones de pesos.
+```{r,echo=FALSE}
+Precio_inicial <- AdjClose[nrow(AdjClose),]
+Total_inversion <- 10 #10 millones de pesos
+Participacion <-c(3,2,1,1.5,2.5)
+Participacion1 <-matrix(Participacion*10 ,nrow = 5,ncol = 1,byrow = T)
+row.names(Participacion1)<-c("BIMBO","COCA","AMERICAN","WALMEX","AXTEL")
+kable(round(Participacion1,3),col.names = "Participación (%)")
+Volatilidad <- apply(rendAcciones,2,sd)
+media <- apply(rendAcciones,2,mean)
+```
+
+Se determina el cuantil respecto al vector de rendimientos del portafolio, para el nivel de confianza propuesto.
+Este cuantil encontrado es lo que llamaremos como la máxima perdida esperada, dado el nivel de confianza (VaR).
+
+```{r, echo=FALSE, fig.align="center"}
+t <- 250  #Tiempo 
+n <- 10000  #numero de trayectorias o escenarios
+a <- c(0.99,0.95) #nivel de confianza
+  tiempo <- 1/t
+  tiempos<-seq(0,1,1/n)
+  rendPortafolio <- c()
+  St <- matrix(0,nrow = (n+1),ncol=length(Volatilidad))  
+  for (i in 1:n) {
+    for (j in 1:length(Volatilidad)) {
+        Z <- rnorm(length(Volatilidad),0,1)
+        E <- Z%*%L
+      St[1,]<-Precio_inicial
+      St[(i+1),j]<-St[i,j]*exp((media[j]-Volatilidad[j]^2/2)*tiempo+Volatilidad[j]*E[j]*sqrt(tiempo))
+    }  
+  }
+ 
+  Stc <- matrix(0,nrow = (n+1),ncol =length(Volatilidad) )
+  for (k in 1:(n+1)) {
+    Stc[k,] <- St[k,]*100/St[1,]
+  }
+
+ 
+
+  matplot(tiempos,Stc,type = "l",lty= 1, main=sprintf("Simulaciones de precios por accion a 1 dia (Base 100)"),col=c("black","red","blue","violet","green"),xlab = "Tiempos",ylab = "Precios simulados")
+  legend(x="topleft",legend =c("Bimbo","Coca-cola","Ameria movil","Walmex","Axtel"), bg=NULL,bty="n",cex =0.8, lty= 1,col=c("black","red","blue","violet","green"))
+  rend <- diff(log(St))
+ 
+  rendPortafolio <-rend%*%Participacion1/10
+  Rentabilidadport <- rendPortafolio*Total_inversion
+  rend_promedio <- mean(rendPortafolio)*Total_inversion
+  Var <- quantile(Rentabilidadport,1-a);names(Var)<- NULL
+  #precio <- sum(St[(n+1),]*participacion)*(1+Var)
+  ans1 <- c(abs(rend_promedio),abs(Var))
+  names(ans1) <- c("Rendimiento promedio",paste("VaR (",a*100,"%)", sep=""))
+  kable(round(ans1,5),col.names="Millones de pesos")
+
+```
+**Se muestran los resultados del cálculo del VaR paramétrico y VaR histórico para nuestro portafolio**
+
+```{r, echo=FALSE,fig.align="center"}
+Rendport <- rendAcciones%*%Participacion1/10 
+Rentabilidad<- Rendport*Total_inversion
+C <-abs(qnorm(a,0,1))
+m <- mean(Rendport)
+dsv <- sd(Rendport)
+Var_absoluto <- abs(Total_inversion*(dsv*C*sqrt(1/nrow(rendAcciones))-m))
+Var_relativo <- abs(Total_inversion*dsv*C*sqrt(1/nrow(rendAcciones)))
+Var_historico <- abs(quantile(Rentabilidad,1-a))
+ans <- c(m*Total_inversion,Var_absoluto,Var_relativo,Var_historico)
+  names(ans) <- c("Rendimiento promedio",paste("VaR Absoluto (",a*100,"%)", sep=""),paste("VaR Relativo (",a*100,"%)", sep=""),paste("VaR Historico (",a*100,"%)", sep=""))
+  kable(round(ans,5),col.names="Millones de pesos")
+
+```
+
+ **A continuación se presenta un histograma de pérdidas y ganancias del portafolio.**
+
+```{r,echo=FALSE,fig.align="center"}
+
+hist(Rentabilidadport,100, col="darkred", main="Pérdidas y ganancias del portafolio", ylab="Frecuencia",xlab = "Distancia",freq = FALSE)
+x <- seq(-0.3, 0.3, length.out=10000)
+y <- dnorm(x, mean(Rentabilidadport), sd(Rentabilidadport))
+lines(x, y, col = "black",type = "l",lwd=2)
+names(ans1)<-NULL
+x1<-ans1[2]
+abline(v=x1,col="darkblue",lwd=2)
+legend(x="topleft",legend =c("VaR(99%)"), bg=NULL,bty="n",cex =0.8, lty= 1,col=c("darkblue"),lwd=2)
+```
